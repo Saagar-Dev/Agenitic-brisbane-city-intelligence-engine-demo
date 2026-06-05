@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Brisbane City Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/deck.gl@8.9.35/dist.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts-gl@2.0.9/dist/echarts-gl.min.js"></script>
+<style>
+:root{
+  --bg:#060d1a;--hbg:#0a1628;--lbg:#04080f;
+  --border:rgba(0,180,216,0.15);--text:#e0f2fe;--muted:#5b8faa;--dim:#1e3a4a;
+  --mono:'JetBrains Mono',monospace;--river:#00b4d8;--gold:#fbbf24;
+  --critical:#ef4444;--high:#f97316;--medium:#fbbf24;--safe:#4ade80;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+.hdr{display:flex;align-items:center;gap:8px;padding:.4rem 1rem;background:var(--hbg);border-bottom:1px solid var(--border);flex-shrink:0;box-shadow:0 2px 20px rgba(0,0,0,0.5);}
+.brand{font-size:13px;font-weight:700;color:var(--river);letter-spacing:.07em;text-shadow:0 0 14px rgba(0,180,216,0.3);}
+.sub{font-size:8px;color:var(--muted);margin-top:1px;}
+.vsep{width:1px;height:18px;background:var(--border);flex-shrink:0;}
+.lbl{font-size:8px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;flex-shrink:0;}
+.btn{font-family:var(--mono);font-size:10px;cursor:pointer;border-radius:5px;padding:4px 12px;transition:all .15s;flex-shrink:0;}
+.btnp{background:rgba(0,180,216,0.12);border:1px solid rgba(0,180,216,0.45);color:var(--river);font-weight:700;}
+.btnp:hover{background:rgba(0,180,216,0.22);}
+.btns{background:transparent;border:1px solid rgba(0,180,216,0.15);color:var(--muted);}
+.btns:hover{border-color:rgba(0,180,216,0.35);color:var(--text);}
+.btns:disabled{opacity:.4;cursor:not-allowed;}
+.body{display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0;}
+/* DUAL CHART ROW */
+.charts-row{flex:1;display:flex;min-height:0;overflow:hidden;}
+/* LEFT: MAP */
+.map-panel{flex:1.1;position:relative;overflow:hidden;min-height:0;}
+#map-container{position:absolute;inset:0;}
+.maplibregl-canvas{outline:none;}
+/* Floating layer controls — bottom left of map */
+.ctrl-panel{position:absolute;bottom:10px;left:10px;z-index:100;background:rgba(6,13,26,0.93);border:1px solid var(--border);border-radius:8px;padding:10px 12px;width:206px;backdrop-filter:blur(12px);pointer-events:all;}
+.ctrl-section{margin-bottom:8px;}
+.ctrl-section:last-child{margin-bottom:0;}
+.ctrl-lbl{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px;}
+.layer-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;padding:2px 3px;border-radius:3px;}
+.layer-row:hover{background:rgba(255,255,255,0.04);}
+.ltog{width:26px;height:13px;border-radius:7px;border:1px solid rgba(255,255,255,0.2);position:relative;flex-shrink:0;transition:background .2s;background:rgba(255,255,255,0.1);}
+.ltog::after{content:'';position:absolute;top:1.5px;left:1.5px;width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.35);transition:all .2s;}
+.ltog.on::after{left:14.5px;background:#fff;}
+.llbl{font-size:9px;color:var(--muted);flex:1;}
+.ldot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.metric-btn{font-size:8px;font-family:var(--mono);padding:2px 6px;border-radius:3px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:var(--muted);cursor:pointer;margin:2px;transition:all .15s;}
+.metric-btn.active{background:rgba(0,180,216,0.15);border-color:rgba(0,180,216,0.45);color:var(--river);}
+.filter-chip{font-size:8px;font-family:var(--mono);padding:2px 6px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:var(--muted);cursor:pointer;margin:2px;display:inline-block;transition:all .15s;}
+.filter-chip.active{border-color:var(--gold);color:var(--gold);background:rgba(251,191,36,0.1);}
+.vbtn{font-size:8px;font-family:var(--mono);padding:2px 7px;border-radius:3px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;}
+.vbtn:hover{border-color:var(--river);color:var(--river);}
+#suburb-tip{position:absolute;z-index:200;background:rgba(6,13,26,0.96);border:1px solid rgba(0,180,216,0.3);border-radius:8px;padding:10px 12px;pointer-events:none;display:none;min-width:190px;backdrop-filter:blur(12px);font-size:10px;line-height:1.8;}
+/* RIGHT: ECHARTS 3D */
+.scatter-panel{flex:1;position:relative;overflow:hidden;border-left:1px solid var(--border);}
+#scatter-chart{width:100%;height:100%;}
+.chart-label{position:absolute;top:8px;left:10px;z-index:10;font-size:9px;color:var(--muted);background:rgba(4,8,15,0.82);padding:3px 9px;border-radius:3px;border:1px solid var(--border);}
+.kpi-overlay{position:absolute;top:8px;right:10px;z-index:10;display:flex;gap:5px;}
+.kpi{background:rgba(4,8,15,0.88);border:1px solid var(--border);border-radius:6px;padding:5px 10px;text-align:center;backdrop-filter:blur(8px);}
+.kpi-v{font-size:13px;font-weight:700;color:var(--river);}
+.kpi-l{font-size:7px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:1px;}
+/* AGENT STRIP */
+.agents-strip{flex-shrink:0;display:flex;border-top:1px solid var(--border);background:var(--hbg);overflow-x:auto;height:110px;}
+.agents-strip::-webkit-scrollbar{height:3px;}
+.agents-strip::-webkit-scrollbar-thumb{background:rgba(0,180,216,0.2);border-radius:2px;}
+.ac{flex-shrink:0;width:185px;padding:7px 10px;border-right:1px solid var(--border);display:flex;flex-direction:column;cursor:default;}
+.ac:hover{background:rgba(0,180,216,0.04);}
+.ac-hdr{display:flex;align-items:center;gap:5px;margin-bottom:4px;}
+.ac-emoji{font-size:13px;flex-shrink:0;}
+.ac-name{font-size:10px;font-weight:700;}
+.ac-role{font-size:7px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+.ac-score{font-size:11px;font-weight:700;margin-left:auto;}
+.ac-calls{font-size:7px;color:var(--dim);text-align:right;}
+.ac-state{font-size:9px;color:var(--muted);height:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:3px;}
+.bar-row{display:flex;justify-content:space-between;font-size:7px;color:var(--dim);margin-bottom:1px;}
+.bar{height:3px;background:rgba(255,255,255,0.07);border-radius:2px;margin-bottom:3px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:2px;transition:width .5s;}
+/* FINDINGS */
+.findings-strip{flex-shrink:0;border-top:1px solid var(--border);background:var(--lbg);display:flex;align-items:stretch;overflow-x:auto;height:72px;}
+.findings-strip::-webkit-scrollbar{height:3px;}
+.findings-strip::-webkit-scrollbar-thumb{background:rgba(0,180,216,0.25);border-radius:2px;}
+.findings-lbl{flex-shrink:0;writing-mode:vertical-rl;font-size:7px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:0 9px;border-right:1px solid var(--border);display:flex;align-items:center;}
+.finding-card{flex-shrink:0;width:210px;padding:6px 10px;border-right:1px solid var(--border);border-left:3px solid;display:flex;flex-direction:column;justify-content:space-between;}
+.finding-suburb{font-size:11px;font-weight:700;}
+.finding-desc{font-size:8px;color:#64748b;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+.finding-empty{display:flex;align-items:center;padding:0 20px;font-size:10px;color:var(--dim);white-space:nowrap;flex-shrink:0;}
+/* TICKER + LOG */
+.ticker-bar{flex-shrink:0;height:27px;background:rgba(2,6,14,0.98);border-top:1px solid rgba(0,180,216,0.15);display:flex;align-items:center;overflow:hidden;}
+.ticker-label{font-size:9px;font-weight:700;color:var(--river);padding:0 12px;border-right:1px solid rgba(0,180,216,0.25);white-space:nowrap;flex-shrink:0;letter-spacing:.08em;background:rgba(0,180,216,0.06);}
+.ticker-track{flex:1;overflow:hidden;position:relative;height:100%;}
+#ticker-inner{white-space:nowrap;position:absolute;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted);}
+#ticker-hist{display:flex;align-items:center;gap:5px;padding:0 10px;border-left:1px solid rgba(0,180,216,0.15);flex-shrink:0;max-width:220px;overflow:hidden;}
+.tpill{font-family:var(--mono);font-size:8px;padding:2px 6px;border-radius:10px;border:1px solid;white-space:nowrap;flex-shrink:0;opacity:.75;}
+.log-bar{flex-shrink:0;display:flex;background:var(--lbg);border-top:1px solid var(--border);padding:.4rem 1rem;height:90px;}
+.log-inner{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+.log-lbl{font-size:8px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;flex-shrink:0;}
+.log{display:flex;flex-direction:column;overflow-y:scroll;flex:1;min-height:0;}
+.log::-webkit-scrollbar{width:3px;}.log::-webkit-scrollbar-thumb{background:rgba(0,180,216,0.2);border-radius:2px;}
+.ll{font-family:var(--mono);font-size:10px;line-height:1.55;white-space:pre-wrap;word-break:break-word;padding:0 3px;flex-shrink:0;}
+.lm{color:var(--dim)}.lb{color:var(--river)}.ly{color:var(--gold);font-weight:600}.le{color:var(--critical)}.lg{color:var(--safe)}
+/* MODAL */
+.xpand-modal{position:fixed;inset:0;background:rgba(2,6,12,0.97);z-index:3000;display:none;flex-direction:column;backdrop-filter:blur(16px);}
+.xpand-modal.open{display:flex;}
+.xhdr{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1.2rem;background:var(--hbg);border-bottom:1px solid var(--border);flex-shrink:0;}
+.xtitle{font-size:11px;font-weight:700;color:var(--river);letter-spacing:.08em;}
+.xclose{font-size:10px;color:var(--muted);cursor:pointer;padding:4px 10px;border:1px solid rgba(0,180,216,0.28);border-radius:4px;background:transparent;}
+.xclose:hover{color:var(--text);border-color:var(--river);}
+.xbody{flex:1;overflow-y:auto;padding:1rem 1.2rem;}
+.xbody::-webkit-scrollbar{width:5px;}.xbody::-webkit-scrollbar-thumb{background:rgba(0,180,216,0.25);border-radius:3px;}
+.kb-outer{overflow-x:auto;padding-bottom:8px;}.kb-outer::-webkit-scrollbar{height:5px;}.kb-outer::-webkit-scrollbar-thumb{background:rgba(0,180,216,0.3);border-radius:3px;}
+.kb-body::-webkit-scrollbar{width:4px;}.kb-body::-webkit-scrollbar-thumb{border-radius:2px;}
+#vov{position:fixed;inset:0;background:rgba(2,6,12,0.95);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(14px);opacity:0;pointer-events:none;transition:opacity .5s;overflow-y:auto;padding:16px;}
+@keyframes vpop{from{transform:scale(0.85) translateY(20px);opacity:0}to{transform:scale(1) translateY(0);opacity:1}}
+#intro-overlay{position:fixed;inset:0;background:rgba(2,6,12,0.97);z-index:2000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(16px);overflow-y:auto;padding:16px;}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div style="display:flex;flex-direction:column;line-height:1.2">
+    <span class="brand">BRISBANE CITY INTELLIGENCE ENGINE</span>
+    <span class="sub">by Saagar Devadiga · BCC Open Data · MapLibre + deck.gl 3D · ECharts GL · Claude AI</span>
+  </div>
+  <div class="vsep"></div>
+  <button class="btn btnp" id="bstart" onclick="startMission()">▶ RUN AGENTS</button>
+  <button class="btn btns" onclick="testAPI()">TEST</button>
+  <button class="btn btns" onclick="resetMission()">RESET</button>
+  <div class="vsep"></div>
+  <span class="lbl">SPEED</span>
+  <button class="btn btns" id="spd-05" onclick="setSpeed(0.5)" style="padding:3px 8px">0.5×</button>
+  <button class="btn btns" id="spd-1" onclick="setSpeed(1)" style="padding:3px 8px;border-color:rgba(0,180,216,0.4);color:var(--river)">1×</button>
+  <button class="btn btns" id="spd-2" onclick="setSpeed(2)" style="padding:3px 8px">2×</button>
+  <button class="btn btns" id="pause-btn" onclick="togglePause()" style="padding:3px 10px">⏸ Pause</button>
+  <div class="vsep"></div>
+  <button class="btn btns" onclick="openStory()" style="padding:3px 10px;border-color:rgba(251,191,36,0.3);color:var(--gold)">🧠 Reasoning</button>
+  <span id="rev-badge" style="display:none;background:rgba(0,180,216,0.08);border:1px solid rgba(0,180,216,0.3);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--river);margin-left:auto">0 scored</span>
+</div>
+
+<div class="body">
+  <div class="charts-row">
+
+    <!-- LEFT: MapLibre GL + deck.gl overlay -->
+    <div class="map-panel">
+      <div id="map-container"></div>
+
+      <!-- Floating controls — bottom left -->
+      <div class="ctrl-panel">
+        <div class="ctrl-section">
+          <div class="ctrl-lbl">Map Layers</div>
+          <div class="layer-row" onclick="toggleLayer('columns')">
+            <div class="ltog on" id="lt-columns" style="background:rgba(0,180,216,0.3);border-color:#00b4d8"></div>
+            <div class="ldot" style="background:#00b4d8"></div>
+            <span class="llbl" style="color:var(--river)">3D Investment Columns</span>
+          </div>
+          <div class="layer-row" onclick="toggleLayer('heatmap')">
+            <div class="ltog on" id="lt-heatmap" style="background:rgba(239,68,68,0.3);border-color:#ef4444"></div>
+            <div class="ldot" style="background:#ef4444"></div>
+            <span class="llbl">Flood Risk Heatmap</span>
+          </div>
+          <div class="layer-row" onclick="toggleLayer('contour')">
+            <div class="ltog" id="lt-contour"></div>
+            <div class="ldot" style="background:#fbbf24"></div>
+            <span class="llbl">Transit Coverage Gap</span>
+          </div>
+          <div class="layer-row" onclick="toggleLayer('bubbles')">
+            <div class="ltog" id="lt-bubbles"></div>
+            <div class="ldot" style="background:#a78bfa"></div>
+            <span class="llbl">Property Price Bubbles</span>
+          </div>
+        </div>
+        <div class="ctrl-section">
+          <div class="ctrl-lbl">Column Height =</div>
+          <div>
+            <button class="metric-btn active" onclick="setMetric('priority')" id="mb-priority">Priority</button>
+            <button class="metric-btn" onclick="setMetric('flood')" id="mb-flood">Flood Risk</button>
+            <button class="metric-btn" onclick="setMetric('transit_gap')" id="mb-transit_gap">Transit Gap</button>
+            <button class="metric-btn" onclick="setMetric('develop')" id="mb-develop">Dev Activity</button>
+            <button class="metric-btn" onclick="setMetric('median')" id="mb-median">Price</button>
+          </div>
+        </div>
+        <div class="ctrl-section">
+          <div class="ctrl-lbl">Zone Filter</div>
+          <div>
+            <span class="filter-chip active" onclick="setZone('all')" id="zf-all">All</span>
+            <span class="filter-chip" onclick="setZone('Inner')" id="zf-Inner">Inner</span>
+            <span class="filter-chip" onclick="setZone('Near')" id="zf-Near">Near</span>
+            <span class="filter-chip" onclick="setZone('Middle')" id="zf-Middle">Middle</span>
+            <span class="filter-chip" onclick="setZone('Outer')" id="zf-Outer">Outer</span>
+          </div>
+        </div>
+        <div class="ctrl-section">
+          <div class="ctrl-lbl">View</div>
+          <div style="display:flex;gap:4px">
+            <button class="vbtn" onclick="resetView()">⟳ Reset</button>
+            <button class="vbtn" onclick="toggle3D()" id="vb3d">⬡ 2D/3D</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Suburb tooltip -->
+      <div id="suburb-tip"></div>
+    </div>
+
+    <!-- RIGHT: ECharts GL 3D Scatter -->
+    <div class="scatter-panel">
+      <div class="chart-label">🌐 3D Analysis · X=Transit · Y=Green Space · Z=Median Price · size=Dev Activity</div>
+      <div class="kpi-overlay">
+        <div class="kpi"><div class="kpi-v" id="kpi-scored">0/20</div><div class="kpi-l">Scored</div></div>
+        <div class="kpi"><div class="kpi-v" id="kpi-priority" style="color:var(--critical)">0</div><div class="kpi-l">High Priority</div></div>
+        <div class="kpi"><div class="kpi-v" id="kpi-gaps">0</div><div class="kpi-l">Gaps Found</div></div>
+        <div class="kpi"><div class="kpi-v" id="kpi-calls" style="color:var(--gold)">0</div><div class="kpi-l">API Calls</div></div>
+      </div>
+      <div id="scatter-chart"></div>
+    </div>
+
+  </div>
+
+  <div class="agents-strip" id="agents-wrap"></div>
+
+  <div class="findings-strip" id="findings-strip">
+    <div class="findings-lbl">FINDINGS</div>
+    <div class="finding-empty" id="findings-empty">Agent findings surface here as suburbs are analysed…</div>
+  </div>
+</div>
+
+<div class="ticker-bar">
+  <span class="ticker-label">⚡ LIVE</span>
+  <div class="ticker-track"><div id="ticker-inner">Deploy agents to begin Brisbane city intelligence…</div></div>
+  <div id="ticker-hist"></div>
+</div>
+<div class="log-bar">
+  <div class="log-inner">
+    <div class="log-lbl">▸ AGENT LOG</div>
+    <div class="log" id="log"><div class="ll lm">Deploy agents to begin.</div></div>
+  </div>
+</div>
+
+<!-- REASONING MODAL -->
+<div id="modal-reasoning" class="xpand-modal">
+  <div class="xhdr">
+    <span class="xtitle">🧠 Agent Reasoning Board — Brisbane City Intelligence</span>
+    <button class="xclose" onclick="closeModal()">✕ CLOSE</button>
+  </div>
+  <div class="xbody" id="modal-body"></div>
+</div>
+
+<!-- VICTORY -->
+<div id="vov">
+  <div style="background:linear-gradient(145deg,rgba(6,13,26,0.99),rgba(2,8,16,0.99));border:1px solid rgba(0,180,216,0.2);border-radius:18px;padding:1.4rem 1.8rem;max-width:1060px;width:97%;animation:vpop .5s cubic-bezier(.34,1.56,.64,1) both">
+    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Mission Complete · Brisbane City Intelligence Engine</div>
+    <div style="display:flex;align-items:baseline;gap:16px;margin-bottom:1rem;padding-bottom:.8rem;border-bottom:1px solid rgba(0,180,216,0.1)">
+      <div style="font-size:24px;font-weight:700;color:var(--river)"><span id="v-scored">0</span> suburbs analysed</div>
+      <div style="font-size:11px;color:var(--muted)"><span id="v-priority" style="color:var(--critical)">0</span> high priority · <span id="v-gaps" style="color:var(--gold)">0</span> gaps · <span id="v-calls2">0</span> API calls</div>
+    </div>
+    <div style="display:grid;grid-template-columns:260px 1fr;gap:16px;margin-bottom:1rem">
+      <div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">🏆 Agent Rankings</div><div id="v-ranking"></div></div>
+      <div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">📊 Top Priority Suburbs</div><div id="v-scorecards" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px"></div></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;padding-top:.7rem;border-top:1px solid rgba(0,180,216,0.1)">
+      <button onclick="document.getElementById('vov').style.cssText+='opacity:0;pointer-events:none';resetMission();" style="background:rgba(0,180,216,0.1);border:1px solid rgba(0,180,216,0.3);border-radius:6px;padding:7px 14px;font-family:var(--mono);font-size:10px;color:var(--river);cursor:pointer">▶ New Mission</button>
+    </div>
+  </div>
+</div>
+
+<!-- INTRO -->
+<div id="intro-overlay">
+<div style="background:linear-gradient(145deg,rgba(6,13,26,0.99),rgba(2,8,16,0.99));border:1px solid rgba(0,180,216,0.2);border-radius:16px;padding:1.6rem 2rem;max-width:1040px;width:97%;box-shadow:0 0 60px rgba(0,180,216,0.07)">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1rem;padding-bottom:.8rem;border-bottom:1px solid rgba(0,180,216,0.12)">
+    <div>
+      <div style="font-size:9px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:2px">Welcome to</div>
+      <div style="font-size:18px;font-weight:700;color:var(--river)">BRISBANE CITY INTELLIGENCE ENGINE</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px">by Saagar Devadiga · BCC Open Data · MapLibre GL + deck.gl + ECharts GL · Claude AI</div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;margin-left:16px">
+      <div style="font-size:13px;font-weight:700;color:var(--gold)">20 Real Brisbane Suburbs</div>
+      <div style="font-size:10px;color:var(--muted)">8 AI agents · 4 map layers · ECharts 3D</div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;margin-bottom:1rem">
+    <div style="display:flex;flex-direction:column;gap:.7rem">
+      <div style="background:rgba(0,180,216,0.04);border:1px solid rgba(0,180,216,0.15);border-radius:10px;padding:12px 14px">
+        <div style="font-size:9px;color:var(--river);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">🌆 The Scenario</div>
+        <p style="font-size:12px;color:var(--text);line-height:1.9">You are a <strong>Brisbane City Council urban analyst</strong>. 8 AI agents analyse real suburb data — transit, green space, affordability, development, walkability, flood risk.<br><br><strong style="color:var(--river)">Left:</strong> Live MapLibre GL map with deck.gl 3D column bars, flood heatmap, transit contour lines, and property bubbles.<br><strong style="color:var(--gold)">Right:</strong> ECharts GL 3D scatter — all 20 suburbs as floating bubbles in 3D space, updating live.</p>
+      </div>
+      <div style="background:rgba(251,191,36,0.04);border:1px solid rgba(251,191,36,0.15);border-radius:8px;padding:10px 12px">
+        <div style="font-size:9px;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px">📚 Real Data Sources</div>
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <div style="font-size:10px;color:var(--muted)"><strong style="color:var(--text)">CoreLogic 2024</strong> — Median prices &amp; growth by suburb</div>
+          <div style="font-size:10px;color:var(--muted)"><strong style="color:var(--text)">ABS Census 2021</strong> — Population density</div>
+          <div style="font-size:10px;color:var(--muted)"><strong style="color:var(--text)">Translink GTFS 2024</strong> — Bus/train coverage scores</div>
+          <div style="font-size:10px;color:var(--muted)"><strong style="color:var(--text)">BCC Open Data</strong> — Development apps, park coverage</div>
+          <div style="font-size:10px;color:var(--muted)"><strong style="color:var(--text)">BCC Flood Maps</strong> — Q100 flood risk % by suburb</div>
+          <div style="font-size:10px;color:var(--muted)"><strong style="color:var(--text)">Walk Score</strong> — Walkability index</div>
+        </div>
+        <div style="font-size:9px;color:var(--dim);margin-top:6px">Priority 0-100 · 75+ urgent · 55-74 significant · under 35 well-served</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">8 Analyst Agents</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px" id="intro-agents"></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:.7rem">
+      <div style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:11px 12px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">📐 What You Are Looking At</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <div style="width:10px;height:10px;border-radius:2px;background:#00b4d8;flex-shrink:0;margin-top:2px"></div>
+            <div><div style="font-size:10px;font-weight:700;color:var(--river)">3D Column Bars (deck.gl)</div><div style="font-size:9px;color:var(--muted)">Height = metric you choose. Colour = priority score. Grows taller as agents score each suburb.</div></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <div style="width:10px;height:10px;border-radius:50%;background:#ef4444;flex-shrink:0;margin-top:2px"></div>
+            <div><div style="font-size:10px;font-weight:700;color:var(--critical)">Flood Risk Heatmap</div><div style="font-size:9px;color:var(--muted)">BCC Q100 flood event data. Hot red = high climate vulnerability (West End, South Brisbane).</div></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <div style="width:10px;height:2px;background:#fbbf24;flex-shrink:0;margin-top:5px"></div>
+            <div><div style="font-size:10px;font-weight:700;color:var(--gold)">Transit Coverage Contours</div><div style="font-size:9px;color:var(--muted)">Iso-lines where Translink is weakest. Red = severe gap (Kenmore, Camp Hill, Ascot).</div></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <div style="width:10px;height:10px;border-radius:50%;background:#a78bfa;flex-shrink:0;margin-top:2px"></div>
+            <div><div style="font-size:10px;font-weight:700;color:#a78bfa">Property Bubbles</div><div style="font-size:9px;color:var(--muted)">Size = median price. Colour = growth rate. Orange = hot market.</div></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <div style="width:10px;height:10px;border-radius:2px;background:#fbbf24;flex-shrink:0;margin-top:2px"></div>
+            <div><div style="font-size:10px;font-weight:700;color:var(--gold)">ECharts 3D Scatter (right)</div><div style="font-size:9px;color:var(--muted)">Transit vs Green Space vs Price in 3D. Bubbles light up as agents score suburbs.</div></div>
+          </div>
+        </div>
+        <div style="font-size:9px;color:var(--dim);margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,255,255,0.05)">🖱 Drag to pan/rotate map · Scroll to zoom · Click column for suburb details · Toggle layers in controls</div>
+      </div>
+      <div style="background:rgba(0,0,0,0.2);border:1px solid rgba(0,180,216,0.1);border-radius:10px;padding:12px 14px;flex:1;display:flex;flex-direction:column;justify-content:space-between">
+        <div>
+          <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">🔑 Anthropic API Key</div>
+          <div style="display:flex;gap:7px;margin-bottom:6px">
+            <input id="intro-key" type="password" placeholder="sk-ant-api03-…" autocomplete="off"
+              style="flex:1;background:rgba(0,180,216,0.04);border:1px solid rgba(0,180,216,0.2);border-radius:6px;padding:9px 11px;font-family:var(--mono);font-size:10px;color:var(--river);outline:none;transition:border .2s"
+              onfocus="this.style.borderColor='#00b4d8'" onblur="this.style.borderColor='rgba(0,180,216,0.2)'"
+              oninput="onKeyInput(this.value)"/>
+            <div id="key-st" style="display:flex;align-items:center;font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;flex-shrink:0">Enter →</div>
+          </div>
+          <div style="font-size:10px;color:var(--dim)">Stays in your browser. Sent only to Anthropic's API.</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+          <span style="font-size:10px;color:var(--dim)">Built by <strong style="color:var(--muted)">Saagar Devadiga</strong></span>
+          <button id="launch-btn" onclick="launchAgents()"
+            style="background:rgba(0,180,216,0.1);border:1px solid rgba(0,180,216,0.35);border-radius:7px;padding:10px 22px;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--river);cursor:pointer;opacity:.5;transition:transform .15s"
+            onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+            ▶ DEPLOY 8 AGENTS
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+var API_KEY = 'PASTE_YOUR_KEY_HERE';
+
+// ── REAL BRISBANE DATA ──
+var SUBURBS = [
+  {id:'new-farm',        name:'New Farm',       zone:'Inner', lat:-27.467,lng:153.043,median:1850,growth:8.2, transit:88,green:74,density:4500,develop:43, walk:91,flood:15,infra:85},
+  {id:'paddington',      name:'Paddington',     zone:'Inner', lat:-27.462,lng:152.999,median:1420,growth:6.1, transit:76,green:68,density:3800,develop:31, walk:82,flood:5, infra:80},
+  {id:'west-end',        name:'West End',       zone:'Inner', lat:-27.479,lng:152.998,median:1250,growth:9.4, transit:82,green:55,density:5200,develop:87, walk:88,flood:22,infra:75},
+  {id:'south-brisbane',  name:'South Brisbane', zone:'Inner', lat:-27.479,lng:153.018,median:980, growth:7.8, transit:92,green:62,density:9500,develop:124,walk:94,flood:18,infra:90},
+  {id:'fortitude-valley',name:'Fort. Valley',   zone:'Inner', lat:-27.457,lng:153.033,median:730, growth:11.2,transit:88,green:35,density:14200,develop:198,walk:85,flood:8, infra:82},
+  {id:'newstead',        name:'Newstead',       zone:'Inner', lat:-27.449,lng:153.047,median:1150,growth:12.5,transit:72,green:58,density:7800,develop:165,walk:80,flood:12,infra:88},
+  {id:'teneriffe',       name:'Teneriffe',      zone:'Inner', lat:-27.452,lng:153.050,median:1380,growth:10.8,transit:70,green:62,density:4200,develop:88, walk:78,flood:10,infra:86},
+  {id:'hamilton',        name:'Hamilton',       zone:'Near',  lat:-27.432,lng:153.065,median:1680,growth:5.4, transit:65,green:72,density:1800,develop:22, walk:62,flood:5, infra:78},
+  {id:'ascot',           name:'Ascot',          zone:'Near',  lat:-27.420,lng:153.063,median:2100,growth:7.1, transit:58,green:82,density:1400,develop:12, walk:55,flood:2, infra:85},
+  {id:'kangaroo-point',  name:'Kangaroo Pt',    zone:'Inner', lat:-27.483,lng:153.035,median:1080,growth:6.8, transit:78,green:85,density:8800,develop:55, walk:87,flood:15,infra:79},
+  {id:'woolloongabba',   name:'Woolloongabba',  zone:'Near',  lat:-27.493,lng:153.033,median:950, growth:13.8,transit:85,green:45,density:6500,develop:142,walk:82,flood:5, infra:72},
+  {id:'toowong',         name:'Toowong',        zone:'Middle',lat:-27.484,lng:152.981,median:1180,growth:7.3, transit:82,green:58,density:5500,develop:68, walk:78,flood:8, infra:80},
+  {id:'st-lucia',        name:'St Lucia',       zone:'Middle',lat:-27.498,lng:152.993,median:1350,growth:4.2, transit:72,green:78,density:2800,develop:15, walk:68,flood:12,infra:82},
+  {id:'indooroopilly',   name:'Indooroopilly',  zone:'Middle',lat:-27.498,lng:152.973,median:1250,growth:5.8, transit:78,green:65,density:3500,develop:42, walk:72,flood:5, infra:78},
+  {id:'camp-hill',       name:'Camp Hill',      zone:'Middle',lat:-27.497,lng:153.066,median:1450,growth:8.9, transit:55,green:72,density:2500,develop:28, walk:58,flood:2, infra:75},
+  {id:'coorparoo',       name:'Coorparoo',      zone:'Middle',lat:-27.498,lng:153.050,median:1120,growth:7.4, transit:62,green:65,density:3200,develop:38, walk:65,flood:3, infra:72},
+  {id:'chermside',       name:'Chermside',      zone:'Outer', lat:-27.388,lng:153.028,median:780, growth:6.2, transit:72,green:55,density:4500,develop:88, walk:65,flood:2, infra:70},
+  {id:'nundah',          name:'Nundah',         zone:'Outer', lat:-27.407,lng:153.063,median:920, growth:8.5, transit:78,green:52,density:5500,develop:62, walk:72,flood:3, infra:72},
+  {id:'mount-gravatt',   name:'Mt Gravatt',     zone:'Outer', lat:-27.534,lng:153.078,median:890, growth:6.8, transit:65,green:62,density:3500,develop:45, walk:62,flood:2, infra:68},
+  {id:'kenmore',         name:'Kenmore',        zone:'Outer', lat:-27.508,lng:152.936,median:1050,growth:5.1, transit:42,green:82,density:1800,develop:22, walk:45,flood:5, infra:65},
+];
+
+var AGENTS = [
+  {id:'atlas',   name:'Atlas',   role:'Property Analyst',     emoji:'🏘',color:'#00b4d8',maxStam:100,costHop:2,specialty:'property prices, growth rates, affordability gaps across Brisbane suburbs'},
+  {id:'transit', name:'Transit', role:'Transport Analyst',    emoji:'🚌',color:'#4ade80',maxStam:95, costHop:2,specialty:'Translink coverage, bus and train accessibility, transport deserts'},
+  {id:'verde',   name:'Verde',   role:'Green Space Analyst',  emoji:'🌳',color:'#22c55e',maxStam:90, costHop:2,specialty:'park coverage, green space per capita, urban tree canopy'},
+  {id:'dev',     name:'Dev',     role:'Development Analyst',  emoji:'🏗',color:'#fbbf24',maxStam:85, costHop:3,specialty:'development applications, construction activity, growth pressure zones'},
+  {id:'pulse',   name:'Pulse',   role:'Demographics',         emoji:'📊',color:'#f97316',maxStam:90, costHop:2,specialty:'population density, growth corridors, community service demand'},
+  {id:'link',    name:'Link',    role:'Connectivity Analyst', emoji:'🚶',color:'#a78bfa',maxStam:88, costHop:2,specialty:'walkability scores, bike path coverage, active transport gaps'},
+  {id:'river',   name:'River',   role:'Environment Analyst',  emoji:'🌊',color:'#60a5fa',maxStam:85, costHop:3,specialty:'BCC flood risk maps, climate resilience, waterway proximity'},
+  {id:'sage',    name:'Sage',    role:'Strategic Analyst',    emoji:'🧠',color:'#e879f9',maxStam:88, costHop:3,specialty:'synthesising all dimensions into investment priorities for Brisbane City Council'},
+];
+
+var TOOLS = [
+  {name:'scan_suburbs',description:'Scan Brisbane suburbs for your specialty.',input_schema:{type:'object',properties:{dimension:{type:'string'},priority:{type:'string',enum:['high','medium','all']}},required:['dimension']}},
+  {name:'analyse_suburb',description:'Deep analysis of a specific suburb.',input_schema:{type:'object',properties:{suburb_id:{type:'string'},focus:{type:'string'}},required:['suburb_id','focus']}},
+  {name:'score_suburb',description:'Assign an investment priority score 0-100.',input_schema:{type:'object',properties:{suburb_id:{type:'string'},priority_score:{type:'number'},opportunity:{type:'string'},recommendation:{type:'string'}},required:['suburb_id','priority_score','opportunity','recommendation']}},
+  {name:'identify_gap',description:'Flag a specific infrastructure gap.',input_schema:{type:'object',properties:{suburb_id:{type:'string'},gap_type:{type:'string'},severity:{type:'string',enum:['critical','significant','moderate']},action:{type:'string'}},required:['suburb_id','gap_type','severity','action']}},
+];
+
+var AGD = {};
+function initAGD(ag){AGD[ag.id]={b:500,spent:0,stamina:ag.maxStam,findings:0,decisions:[],kpi:{cal:0,scored:0,gaps:0},status:'idle',_lastThought:''};}
+
+var suburbScores = {};
+SUBURBS.forEach(function(s){suburbScores[s.id]=null;});
+
+// ── LAYER STATE ──
+var layerState = {columns:true,heatmap:true,contour:false,bubbles:false};
+var currentMetric = 'priority';
+var currentZone = 'all';
+var is3D = true;
+var leafMap = null;
+var deckOverlay = null;
+
+// ── RATE LIMITER ──
+var _q=[],_lastCall=0;
+function acquireSlot(){return new Promise(function(r){_q.push(r);if(_q.length===1)drainQ();});}
+function drainQ(){if(!_q.length)return;if(missionPaused){setTimeout(drainQ,300);return;}var w=Math.max(0,2200-(Date.now()-_lastCall));setTimeout(function(){_lastCall=Date.now();var r=_q.shift();r();drainQ();},w);}
+var SPEED_MULT=1.0,missionPaused=false;
+function setSpeed(s){SPEED_MULT=s;['05','1','2'].forEach(function(x){var el=document.getElementById('spd-'+x);var m=(x==='05'&&s===0.5)||(x==='1'&&s===1)||(x==='2'&&s===2);if(el){el.style.borderColor=m?'rgba(0,180,216,0.4)':'rgba(0,180,216,0.15)';el.style.color=m?'#00b4d8':'#5b8faa';}});}
+function togglePause(){missionPaused=!missionPaused;var btn=document.getElementById('pause-btn');if(btn){btn.textContent=missionPaused?'▶ Resume':'⏸ Pause';btn.style.borderColor=missionPaused?'rgba(251,191,36,0.4)':'rgba(0,180,216,0.15)';btn.style.color=missionPaused?'#fbbf24':'#5b8faa';}var ti=document.getElementById('ticker-inner');if(ti){ti.getAnimations().forEach(function(a){missionPaused?a.pause():a.play();});}}
+async function sleep(ms){await new Promise(function(r){setTimeout(r,Math.max(80,ms/SPEED_MULT));});while(missionPaused){await new Promise(function(r){setTimeout(r,120);}); }}
+
+// ── HELPERS ──
+function hexRgb(hex){hex=hex.replace('#','');if(hex.length===3)hex=hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];return[parseInt(hex.substring(0,2),16),parseInt(hex.substring(2,4),16),parseInt(hex.substring(4,6),16)];}
+function scoreToRGBA(sc){if(sc===null)return[80,110,140,100];if(sc>=75)return[239,68,68,220];if(sc>=55)return[249,115,22,220];if(sc>=35)return[251,191,36,220];return[74,222,128,220];}
+function scoreToColor(sc){if(sc===null)return'rgba(80,110,140,0.5)';if(sc>=75)return'#ef4444';if(sc>=55)return'#f97316';if(sc>=35)return'#fbbf24';return'#4ade80';}
+function getMetricVal(s,metric){var sc=suburbScores[s.id];if(metric==='priority')return sc!==null?sc:5;if(metric==='flood')return s.flood;if(metric==='transit_gap')return 100-s.transit;if(metric==='develop')return Math.min(100,s.develop/2);if(metric==='median')return Math.min(100,(s.median-700)/15);return 10;}
+function getFiltered(){return SUBURBS.filter(function(s){if(currentZone!=='all'&&s.zone!==currentZone)return false;return true;});}
+
+// ── MAPLIBRE GL + DECK.GL ──
+function initMap(){
+  var el=document.getElementById('map-container');if(!el)return;
+  leafMap=new maplibregl.Map({
+    container:'map-container',
+    style:'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+    center:[153.025,-27.468],
+    zoom:11.5,
+    pitch:50,
+    bearing:-10,
+    antialias:true,
+  });
+  leafMap.addControl(new maplibregl.NavigationControl({showCompass:true}),'bottom-right');
+  leafMap.on('load',function(){
+    deckOverlay=new deck.MapboxOverlay({interleaved:false,layers:buildDeckLayers()});
+    leafMap.addControl(deckOverlay);
+  });
+  // Tooltip on mouse move — use deck.gl picking
+  leafMap.on('mousemove',function(e){
+    var tip=document.getElementById('suburb-tip');if(!tip)return;
+    // Find nearest suburb within ~500m
+    var px=e.point,closest=null,minDist=40;
+    SUBURBS.forEach(function(s){
+      var sp=leafMap.project([s.lng,s.lat]);
+      var d=Math.sqrt(Math.pow(px.x-sp.x,2)+Math.pow(px.y-sp.y,2));
+      if(d<minDist){minDist=d;closest=s;}
+    });
+    if(closest){
+      var sc=suburbScores[closest.id];var col=scoreToColor(sc);
+      tip.style.display='block';tip.style.left=e.point.x+15+'px';tip.style.top=e.point.y-10+'px';
+      tip.innerHTML='<div style="font-size:12px;font-weight:700;color:'+col+';margin-bottom:5px">'+closest.name+' <span style="font-size:9px;color:#5b8faa">('+closest.zone+')</span></div>'
+        +'<span style="color:#4ade80">Transit:</span> '+closest.transit+'/100 &nbsp; <span style="color:#22c55e">Green:</span> '+closest.green+'/100<br>'
+        +'<span style="color:#fbbf24">Median:</span> $'+closest.median+'k &nbsp; <span style="color:#f97316">Growth:</span> +'+closest.growth+'%<br>'
+        +'<span style="color:#60a5fa">Flood:</span> '+closest.flood+'% &nbsp; <span style="color:#a78bfa">Walk:</span> '+closest.walk+'/100<br>'
+        +'<span style="color:#00b4d8">Dev Apps:</span> '+closest.develop
+        +(sc!==null?'<br><strong style="color:'+col+'">Priority: '+sc+'/100</strong>':'');
+    }else{tip.style.display='none';}
+  });
+  leafMap.on('mouseout',function(){var t=document.getElementById('suburb-tip');if(t)t.style.display='none';});
+}
+
+function buildDeckLayers(){
+  var data=getFiltered();var layers=[];
+  if(layerState.heatmap){
+    layers.push(new deck.HeatmapLayer({id:'heatmap',data:data,getPosition:function(d){return[d.lng,d.lat];},getWeight:function(d){return d.flood;},radiusPixels:90,intensity:1.2,threshold:0.025,colorRange:[[255,255,178,0],[254,178,76,100],[253,141,60,160],[240,59,32,200],[189,0,38,230]],opacity:0.55}));
+  }
+  if(layerState.contour){
+    layers.push(new deck.ContourLayer({id:'contour',data:data,getPosition:function(d){return[d.lng,d.lat];},getWeight:function(d){return 100-d.transit;},contours:[{threshold:25,color:[74,222,128,200],strokeWidth:2},{threshold:45,color:[251,191,36,220],strokeWidth:2},{threshold:60,color:[249,115,22,240],strokeWidth:3},{threshold:75,color:[239,68,68,255],strokeWidth:3}],cellSize:800,opacity:0.75}));
+  }
+  if(layerState.bubbles){
+    layers.push(new deck.ScatterplotLayer({id:'bubbles',data:data,getPosition:function(d){return[d.lng,d.lat];},getRadius:function(d){return Math.max(180,d.median*0.12);},getFillColor:function(d){var g=d.growth;var r=g>10?239:g>8?249:g>6?251:100;var gn=g>10?68:g>8?115:g>6?191:180;var b=g>10?68:g>8?22:g>6?36:255;return[r,gn,b,150];},radiusUnits:'meters',opacity:0.75}));
+  }
+  if(layerState.columns){
+    layers.push(new deck.ColumnLayer({id:'columns',data:data,diskResolution:12,radius:220,extruded:true,getPosition:function(d){return[d.lng,d.lat];},getFillColor:function(d){return scoreToRGBA(suburbScores[d.id]);},getElevation:function(d){return getMetricVal(d,currentMetric)*120;},elevationScale:1,opacity:0.88,material:{ambient:0.35,diffuse:0.6,shininess:32}}));
+  }
+  return layers;
+}
+
+function updateDeckLayers(){if(deckOverlay)deckOverlay.setProps({layers:buildDeckLayers()});}
+
+function toggleLayer(name){
+  layerState[name]=!layerState[name];
+  var el=document.getElementById('lt-'+name);
+  if(el){var cols={columns:'#00b4d8',heatmap:'#ef4444',contour:'#fbbf24',bubbles:'#a78bfa'};if(layerState[name]){var rgb=hexRgb(cols[name]);el.style.background='rgba('+rgb.join(',')+',0.3)';el.style.borderColor=cols[name];el.classList.add('on');}else{el.style.background='rgba(255,255,255,0.1)';el.style.borderColor='rgba(255,255,255,0.25)';el.classList.remove('on');}}
+  updateDeckLayers();
+}
+function setMetric(m){currentMetric=m;document.querySelectorAll('.metric-btn').forEach(function(b){b.classList.remove('active');});var el=document.getElementById('mb-'+m);if(el)el.classList.add('active');updateDeckLayers();}
+function setZone(z){currentZone=z;document.querySelectorAll('.filter-chip[id^="zf-"]').forEach(function(c){c.classList.remove('active');});var el=document.getElementById('zf-'+z);if(el)el.classList.add('active');updateDeckLayers();}
+function resetView(){if(leafMap)leafMap.flyTo({center:[153.025,-27.468],zoom:11.5,pitch:50,bearing:-10,duration:800});}
+function flyToBrisbane(){resetView();}
+function toggle3D(){is3D=!is3D;if(leafMap)leafMap.flyTo({pitch:is3D?50:0,bearing:is3D?-10:0,duration:700});}
+
+// ── ECHARTS 3D SCATTER ──
+var scatterChart=null;
+function initScatter(){
+  var el=document.getElementById('scatter-chart');if(!el)return;
+  var w=el.offsetWidth,h=el.offsetHeight;if(!w||!h){setTimeout(initScatter,300);return;}
+  scatterChart=echarts.init(el,'dark');renderScatter();
+}
+function renderScatter(){
+  if(!scatterChart)return;
+  var data=SUBURBS.map(function(s){var sc=suburbScores[s.id];var col=scoreToColor(sc);var sz=Math.max(8,Math.min(24,6+Math.sqrt(s.develop/8)));return{value:[s.transit,s.green,s.median],name:s.name,itemStyle:{color:col},symbolSize:sz};});
+  scatterChart.setOption({
+    backgroundColor:'transparent',
+    tooltip:{show:true,formatter:function(p){var s=SUBURBS.find(function(x){return x.name===p.name;})||{};var sc=suburbScores[s.id];return '<strong style="color:#00b4d8">'+p.name+'</strong><br>Transit: '+s.transit+'<br>Green: '+s.green+'<br>Price: $'+s.median+'k'+(sc!==null?'<br><strong>Priority: '+sc+'</strong>':'');}},
+    grid3D:{boxWidth:180,boxDepth:160,boxHeight:80,viewControl:{autoRotate:true,autoRotateSpeed:4,distance:250,alpha:18,beta:30},light:{main:{intensity:1.2},ambient:{intensity:0.4}}},
+    xAxis3D:{name:'Transit Score',nameTextStyle:{color:'#4ade80',fontSize:10},axisLabel:{color:'#4a7a5a',fontSize:8},axisLine:{lineStyle:{color:'rgba(0,180,216,0.3)'}},min:35,max:95},
+    yAxis3D:{name:'Green Space',nameTextStyle:{color:'#22c55e',fontSize:10},axisLabel:{color:'#4a7a5a',fontSize:8},axisLine:{lineStyle:{color:'rgba(0,180,216,0.3)'}},min:30,max:90},
+    zAxis3D:{name:'Median Price ($k)',nameTextStyle:{color:'#fbbf24',fontSize:10},axisLabel:{color:'#4a7a5a',fontSize:8},axisLine:{lineStyle:{color:'rgba(0,180,216,0.3)'}},min:700,max:2200},
+    series:[{type:'scatter3D',data:data,label:{show:true,position:'top',distance:5,textStyle:{color:'rgba(255,255,255,0.7)',fontSize:8,fontFamily:'JetBrains Mono'}},emphasis:{label:{show:true,textStyle:{color:'#fff',fontSize:10}}}}],
+  },{notMerge:false});
+}
+
+// ── KPIs ──
+function updateKPIs(){
+  var scored=Object.values(suburbScores).filter(function(v){return v!==null;}).length;
+  var hp=Object.values(suburbScores).filter(function(v){return v!==null&&v>=55;}).length;
+  var gaps=AGENTS.reduce(function(s,ag){return s+AGD[ag.id].kpi.gaps;},0);
+  var calls=AGENTS.reduce(function(s,ag){return s+AGD[ag.id].kpi.cal;},0);
+  var e1=document.getElementById('kpi-scored');if(e1)e1.textContent=scored+'/20';
+  var e2=document.getElementById('kpi-priority');if(e2)e2.textContent=hp;
+  var e3=document.getElementById('kpi-gaps');if(e3)e3.textContent=gaps;
+  var e4=document.getElementById('kpi-calls');if(e4)e4.textContent=calls;
+  var b=document.getElementById('rev-badge');if(b&&scored>0){b.style.display='block';b.textContent=scored+' scored';}
+}
+
+// ── TICKER ──
+var _tq=[],_tRunning=false;
+function showEvent(icon,title,sub,color){_tq.push({icon:icon,title:title,sub:sub,color:color});var hist=document.getElementById('ticker-hist');if(hist){var pill=document.createElement('span');pill.className='tpill';pill.style.cssText='color:'+color+';border-color:'+color+'44;background:'+color+'11';pill.title=title+(sub?' — '+sub:'');pill.textContent=icon+' '+title.substring(0,14)+(title.length>14?'…':'');hist.appendChild(pill);while(hist.children.length>5)hist.removeChild(hist.firstChild);}if(!_tRunning)_runTicker();}
+function _runTicker(){if(!_tq.length){_tRunning=false;return;}_tRunning=true;var ev=_tq.shift();var inner=document.getElementById('ticker-inner');var track=document.querySelector('.ticker-track');if(!inner||!track){setTimeout(_runTicker,500);return;}inner.getAnimations().forEach(function(a){a.cancel();});inner.innerHTML='<span style="font-size:13px;margin-right:8px">'+ev.icon+'</span><span style="color:'+ev.color+';font-weight:700">'+ev.title+'</span>'+(ev.sub?'<span style="color:#5b8faa;margin-left:10px">— '+ev.sub+'</span>':'');requestAnimationFrame(function(){var tw=track.offsetWidth,ew=inner.offsetWidth||400;var anim=inner.animate([{left:(tw+20)+'px'},{left:(-(ew+20))+'px'}],{duration:((tw+ew+40)/110)*1000,easing:'linear',fill:'forwards'});anim.onfinish=function(){setTimeout(_runTicker,300);};});}
+function addLog(txt,cls){var log=document.getElementById('log');if(!log)return;var d=document.createElement('div');d.className='ll '+(cls||'lm');d.textContent=txt;log.appendChild(d);while(log.children.length>200)log.removeChild(log.firstChild);requestAnimationFrame(function(){log.scrollTop=log.scrollHeight;});}
+function clearLog(){var l=document.getElementById('log');if(l)l.innerHTML='';}
+
+// ── AGENT CARDS ──
+function buildAgentCards(){
+  var wrap=document.getElementById('agents-wrap');if(!wrap)return;wrap.innerHTML='';
+  AGENTS.forEach(function(ag){var s=AGD[ag.id];var rgb=hexRgb(ag.color);var cr=rgb[0],cg=rgb[1],cb=rgb[2];var div=document.createElement('div');div.className='ac';div.id='ac-'+ag.id;div.style.cssText='background:rgba('+cr+','+cg+','+cb+',0.05);border:1px solid rgba('+cr+','+cg+','+cb+',0.2)';div.innerHTML='<div class="ac-hdr"><span class="ac-emoji">'+ag.emoji+'</span><div><div class="ac-name" style="color:'+ag.color+'">'+ag.name+'</div><div class="ac-role">'+ag.role+'</div></div><div style="margin-left:auto;text-align:right"><div class="ac-score" id="acs-sc-'+ag.id+'" style="color:#1e3a4a">0 found</div><div class="ac-calls" id="acs-ca-'+ag.id+'">0 calls</div></div></div><div class="ac-state" id="acs-'+ag.id+'">Idle</div><div class="bar-row"><span>Budget</span><span id="acs-bv-'+ag.id+'">$0/$'+s.b+'</span></div><div class="bar"><div class="bar-fill" id="bb-'+ag.id+'" style="width:0%;background:'+ag.color+'"></div></div><div class="bar-row"><span>Stamina</span><span id="acs-sv-'+ag.id+'">'+s.stamina+'</span></div><div class="bar"><div class="bar-fill" id="sb-'+ag.id+'" style="width:100%;background:'+ag.color+'"></div></div>';wrap.appendChild(div);});
+}
+function updateCard(who){var ag=AGENTS.find(function(a){return a.id===who;});if(!ag)return;var s=AGD[who];var pct=Math.min(100,Math.round(s.spent/s.b*100));var stPct=Math.max(0,Math.round(s.stamina/ag.maxStam*100));var bb=document.getElementById('bb-'+who);if(bb)bb.style.width=pct+'%';var sb=document.getElementById('sb-'+who);if(sb)sb.setAttribute('style','height:100%;width:'+stPct+'%;background:'+ag.color+';border-radius:2px;transition:width .5s');var sc=document.getElementById('acs-sc-'+who);if(sc){sc.textContent=s.findings+' found';sc.style.color=s.findings>0?ag.color:'#1e3a4a';}var ca=document.getElementById('acs-ca-'+who);if(ca)ca.textContent=s.kpi.cal+' calls';var bv=document.getElementById('acs-bv-'+who);if(bv)bv.textContent='$'+s.spent+'/$'+s.b;var sv=document.getElementById('acs-sv-'+who);if(sv)sv.textContent=Math.max(0,s.stamina);}
+function logDec(who,type,text,thought){var s=AGD[who];var n=new Date();var ts=n.getHours().toString().padStart(2,'0')+':'+n.getMinutes().toString().padStart(2,'0')+':'+n.getSeconds().toString().padStart(2,'0');s.decisions.push({ts:ts,type:type,text:text,thought:thought||''});}
+function setState(who,txt){var el=document.getElementById('acs-'+who);if(el)el.textContent=txt;}
+
+// ── TOOL EXECUTOR ──
+async function execTool(who,toolName,inp){
+  var ag=AGENTS.find(function(a){return a.id===who;});var s=AGD[who];var suburb=inp.suburb_id?SUBURBS.find(function(x){return x.id===inp.suburb_id;}):null;var sn=suburb?suburb.name:(inp.suburb_id||'');
+  if(toolName==='scan_suburbs'){var cost=5;if(s.spent+cost>s.b)return{ok:false,reason:'budget'};s.spent+=cost;s.stamina=Math.max(0,s.stamina-ag.costHop);setState(who,'Scanning: '+inp.dimension.substring(0,28));logDec(who,'scan','Scanning: '+inp.dimension.substring(0,40),s._lastThought);addLog(ag.name+' scans: '+inp.dimension.substring(0,45),'lb');await sleep(800);var dim=(inp.dimension||'').toLowerCase();var res=SUBURBS.filter(function(x){if(dim.includes('transit')||dim.includes('transport'))return x.transit<65;if(dim.includes('green')||dim.includes('park'))return x.green<55;if(dim.includes('flood')||dim.includes('climate'))return x.flood>12;if(dim.includes('afford')||dim.includes('price'))return x.median>1200||x.growth>9;if(dim.includes('develop'))return x.develop>80;if(dim.includes('walk'))return x.walk<65;return x.develop>60||x.transit<70;}).slice(0,6);if(!res.length)res=SUBURBS.filter(function(_,i){return i%3===0;}).slice(0,4);return{ok:true,suburbs:res.map(function(x){return{id:x.id,name:x.name,zone:x.zone,transit:x.transit,green:x.green,median:x.median,growth:x.growth,develop:x.develop,walk:x.walk,flood:x.flood};})};}
+  if(toolName==='analyse_suburb'){var cost=8;if(!suburb)return{ok:false,reason:'suburb not found'};if(s.spent+cost>s.b)return{ok:false,reason:'budget'};s.spent+=cost;s.stamina=Math.max(0,s.stamina-ag.costHop);setState(who,'Analysing '+sn);logDec(who,'analyse','→ '+sn+' ('+inp.focus+')',s._lastThought);addLog(ag.name+' → '+sn,'lm');if(leafMap&&Math.random()<0.3)leafMap.flyTo({center:[suburb.lng,suburb.lat],zoom:13,pitch:55,bearing:-15,duration:600});await sleep(900);var aff=Math.round(100-(suburb.median-700)/15);return{ok:true,suburb:sn,zone:suburb.zone,data:{transit_score:suburb.transit,green_score:suburb.green,median_price_k:suburb.median,growth_pct:suburb.growth,pop_density:suburb.density,dev_applications:suburb.develop,walkability:suburb.walk,flood_risk_pct:suburb.flood,affordability:Math.max(10,Math.min(100,aff))}};}
+  if(toolName==='score_suburb'){var cost=12;if(!suburb)return{ok:false,reason:'suburb not found'};if(s.spent+cost>s.b)return{ok:false,reason:'budget'};if(suburbScores[suburb.id]!==null)return{ok:false,reason:'already scored'};s.spent+=cost;s.stamina=Math.max(0,s.stamina-ag.costHop);s.kpi.scored++;s.findings++;var score=Math.max(0,Math.min(100,inp.priority_score||50));var opp=inp.opportunity||'Investment opportunity';var rec=inp.recommendation||'Council review recommended';s.decisions.push({ts:new Date().toTimeString().slice(0,8),type:'score',text:sn+' priority '+score,thought:s._lastThought});logDec(who,'score',sn+' = '+score+'/100',s._lastThought);addLog(ag.name+' scores '+sn+': '+score+'/100','ly');suburbScores[suburb.id]=score;updateDeckLayers();renderScatter();updateCard(who);updateKPIs();var sc=score>=75?'#ef4444':score>=55?'#f97316':score>=35?'#fbbf24':'#4ade80';addFindingCard(ag,suburb,score,sc,opp);showEvent(score>=75?'🔴':score>=55?'🟠':'🟡',sn+': '+score+'/100',opp.substring(0,40),sc);if(score>=75)showEvent('🚨','High priority: '+sn,'Urgent council investment',ag.color);await sleep(600);return{ok:true,scored:sn,score:score};}
+  if(toolName==='identify_gap'){var cost=8;if(!suburb)return{ok:false,reason:'suburb not found'};if(s.spent+cost>s.b)return{ok:false,reason:'budget'};s.spent+=cost;s.stamina=Math.max(0,s.stamina-ag.costHop);s.kpi.gaps++;s.findings++;var sev=inp.severity||'significant';var sc=sev==='critical'?'#ef4444':sev==='significant'?'#f97316':'#fbbf24';logDec(who,'gap',sn+': '+inp.gap_type+' ('+sev+')',s._lastThought);addLog(ag.name+' gap: '+sn+' — '+inp.gap_type,'le');updateCard(who);updateKPIs();showEvent(sev==='critical'?'⚠️':'📍',sn+' — '+inp.gap_type,sev.toUpperCase(),sc);await sleep(500);return{ok:true,gap:inp.gap_type,suburb:sn,severity:sev};}
+  return{ok:false,reason:'unknown tool'};
+}
+
+function addFindingCard(ag,suburb,score,sevCol,opp){var strip=document.getElementById('findings-strip');if(!strip)return;var empty=document.getElementById('findings-empty');if(empty)empty.remove();var div=document.createElement('div');div.className='finding-card';div.style.cssText='border-left-color:'+sevCol+';background:rgba('+hexRgb(sevCol).join(',')+',0.06)';div.innerHTML='<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px"><span style="font-size:11px">'+ag.emoji+'</span><span class="finding-suburb" style="color:'+sevCol+'">'+suburb.name+'</span><span style="margin-left:auto;color:'+sevCol+';background:'+sevCol+'22;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700">'+score+'</span></div><div class="finding-desc">'+opp.substring(0,70)+(opp.length>70?'…':'')+'</div>';var label=strip.querySelector('.findings-lbl');if(label)label.after(div);else strip.appendChild(div);strip.scrollLeft=0;}
+
+// ── AGENT RUNNER ──
+async function runAgent(who){
+  var ag=AGENTS.find(function(a){return a.id===who;});if(!ag)return;var s=AGD[who];s.status='running';
+  var sys='You are '+ag.name+', '+ag.role+' for Brisbane City Council.\nSpecialty: '+ag.specialty+'\nValid suburb IDs: new-farm, paddington, west-end, south-brisbane, fortitude-valley, newstead, teneriffe, hamilton, ascot, kangaroo-point, woolloongabba, toowong, st-lucia, indooroopilly, camp-hill, coorparoo, chermside, nundah, mount-gravatt, kenmore\nBudget: $'+s.b+'. Score suburbs 0-100 (75+=urgent investment). Be specific about Brisbane context.';
+  var msgs=[{role:'user',content:'Begin Brisbane urban analysis. Scan your specialty dimension, analyse 3-4 suburbs, score them, identify critical gaps.'}];
+  var iter=0;
+  while(iter++<28&&s.stamina>0&&s.spent<s.b){
+    await acquireSlot();while(missionPaused){await new Promise(function(r){setTimeout(r,150);});}
+    s.kpi.cal++;updateCard(who);updateKPIs();
+    var trim=msgs;if(msgs.length>10){var last=msgs.slice(-8);var si=0;while(si<last.length&&last[si].role!=='user')si++;trim=si>0?[msgs[0]].concat(last.slice(si)):[msgs[0]].concat(last);}
+    try{
+      var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':window._runtimeKey||API_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:700,system:sys,tools:TOOLS,messages:trim})});
+      if(!r.ok){if(r.status===429){addLog(ag.name+' rate limited — waiting…','ly');await sleep(5000);continue;}if(r.status===400){addLog(ag.name+' context reset','le');msgs.splice(1);await sleep(1000);continue;}addLog(ag.name+' API error '+r.status,'le');await sleep(3000);continue;}
+      var data=await r.json();var content=data.content||[];
+      var txt=content.filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join(' ').trim();
+      if(txt){addLog(ag.name+': '+txt.substring(0,55),'lm');s._lastThought=txt;}
+      msgs.push({role:'assistant',content:content});
+      var tus=content.filter(function(b){return b.type==='tool_use';});
+      if(!tus.length||data.stop_reason==='end_turn')break;
+      var results=[];for(var i=0;i<tus.length;i++){var res=await execTool(who,tus[i].name,tus[i].input);results.push({type:'tool_result',tool_use_id:tus[i].id,content:JSON.stringify(res)});}
+      msgs.push({role:'user',content:results});
+    }catch(e){addLog(ag.name+' error: '+e.message,'le');await sleep(2000);}
+    await sleep(1200);
+  }
+  s.status='done';setState(who,'✓ Complete');addLog(ag.name+' done — '+s.findings+' findings','lg');checkComplete();
+}
+function checkComplete(){if(AGENTS.every(function(ag){return AGD[ag.id].status==='done'||AGD[ag.id].stamina<=0||AGD[ag.id].spent>=AGD[ag.id].b;}))setTimeout(showVictory,1500);}
+
+// ── VICTORY ──
+function showVictory(){
+  var sc=Object.values(suburbScores).filter(function(v){return v!==null;}).length;var hp=Object.values(suburbScores).filter(function(v){return v!==null&&v>=55;}).length;var g=AGENTS.reduce(function(s,ag){return s+AGD[ag.id].kpi.gaps;},0);var c=AGENTS.reduce(function(s,ag){return s+AGD[ag.id].kpi.cal;},0);
+  document.getElementById('v-scored').textContent=sc;document.getElementById('v-priority').textContent=hp;document.getElementById('v-gaps').textContent=g;document.getElementById('v-calls2').textContent=c;
+  var ranked=[].concat(AGENTS).sort(function(a,b){return AGD[b.id].findings-AGD[a.id].findings;});var medals=['🥇','🥈','🥉','4th','5th','6th','7th','8th'];
+  document.getElementById('v-ranking').innerHTML=ranked.map(function(ag,i){var s=AGD[ag.id];var rgb=hexRgb(ag.color);return'<div style="display:flex;align-items:center;gap:6px;padding:'+(i===0?7:4)+'px 8px;border-radius:6px;background:rgba('+rgb.join(',')+(i===0?',0.07':', 0.03')+');border:1px solid rgba('+rgb.join(',')+(i===0?',0.22':', 0.1')+');margin-bottom:4px;overflow:hidden"><span style="flex-shrink:0">'+medals[i]+'</span><span>'+ag.emoji+'</span><span style="font-family:var(--mono);font-size:'+(i===0?11:9)+'px;font-weight:700;color:'+ag.color+';width:52px;flex-shrink:0">'+ag.name+'</span><span style="font-size:8px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+ag.role+'</span><span style="font-family:var(--mono);font-size:'+(i===0?10:9)+'px;color:'+(s.findings>0?'#4ade80':'var(--muted)')+';flex-shrink:0">'+s.findings+' found</span></div>';}).join('');
+  var top=SUBURBS.filter(function(s){return suburbScores[s.id]!==null;}).sort(function(a,b){return(suburbScores[b.id]||0)-(suburbScores[a.id]||0);}).slice(0,8);
+  document.getElementById('v-scorecards').innerHTML=top.map(function(s){var v=suburbScores[s.id];var col=v>=75?'#ef4444':v>=55?'#f97316':v>=35?'#fbbf24':'#4ade80';var rgb=hexRgb(col);return'<div style="background:rgba('+rgb.join(',')+',0.05);border:1px solid rgba('+rgb.join(',')+',0.2);border-radius:7px;padding:8px 9px"><div style="font-family:var(--mono);font-size:10px;font-weight:700;color:'+col+'">'+s.name+'</div><div style="font-family:var(--mono);font-size:8px;color:var(--muted);margin-top:2px">'+s.zone+' · $'+s.median+'k</div><div style="height:3px;background:rgba(255,255,255,0.06);border-radius:2px;margin:5px 0"><div style="height:100%;width:'+v+'%;background:'+col+';border-radius:2px"></div></div><div style="font-family:var(--mono);font-size:9px;color:var(--muted)">Priority: <span style="color:'+col+';font-weight:700">'+v+'</span></div></div>';}).join('');
+  document.getElementById('vov').style.opacity='1';document.getElementById('vov').style.pointerEvents='all';
+}
+
+// ── REASONING BOARD ──
+function openStory(){
+  var body=document.getElementById('modal-body');
+  var ti={scan:'🔭',analyse:'📊',score:'🎯',identify_gap:'⚠️'};var tc={scan:'#00b4d8',analyse:'#fbbf24',score:'#4ade80',identify_gap:'#ef4444'};var tl={scan:'Scan',analyse:'Analysis',score:'Priority Score',identify_gap:'Gap Found'};
+  var active=AGENTS.filter(function(ag){return AGD[ag.id].decisions.length>0;});
+  if(!active.length){body.innerHTML='<div style="font-family:var(--mono);font-size:13px;color:var(--muted);padding:3rem;text-align:center">No decisions yet — run the agents first.</div>';document.getElementById('modal-reasoning').classList.add('open');return;}
+  body.innerHTML='<div class="kb-outer" style="display:flex;gap:10px">'+AGENTS.map(function(ag){var decs=AGD[ag.id].decisions||[];var rgb=hexRgb(ag.color);var cr=rgb[0],cg=rgb[1],cb=rgb[2];
+    var cards=!decs.length?'<div style="font-family:var(--mono);font-size:10px;color:var(--dim);padding:12px;text-align:center">No decisions yet</div>'
+      :decs.map(function(d){var col=tc[d.type]||'#94a3b8';return'<div style="background:rgba('+cr+','+cg+','+cb+',0.04);border:1px solid rgba('+cr+','+cg+','+cb+',0.1);border-radius:6px;padding:8px 10px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-family:var(--mono);font-size:8px;color:var(--dim)">'+d.ts+'</span><span style="font-family:var(--mono);font-size:8px;font-weight:700;color:'+col+';padding:1px 5px;border-radius:3px;background:'+col+'18">'+(ti[d.type]||'·')+' '+(tl[d.type]||d.type)+'</span></div><div style="font-family:var(--mono);font-size:10px;color:var(--text);margin-bottom:4px">'+d.text+'</div>'+(d.thought?'<div style="font-size:10px;color:#64748b;line-height:1.6;font-style:italic;border-left:2px solid rgba(255,255,255,0.08);padding-left:6px">&ldquo;'+d.thought.substring(0,200)+(d.thought.length>200?'&hellip;':'')+'&rdquo;</div>':'')+'</div>';}).join('');
+    return'<div style="min-width:230px;max-width:230px;flex-shrink:0"><div style="background:rgba('+cr+','+cg+','+cb+',0.08);border:1px solid rgba('+cr+','+cg+','+cb+',0.25);border-radius:8px 8px 0 0;padding:10px 12px;position:sticky;top:0"><div style="display:flex;align-items:center;gap:6px"><span style="font-size:16px">'+ag.emoji+'</span><div><div style="font-family:var(--mono);font-size:11px;font-weight:700;color:'+ag.color+'">'+ag.name+'</div><div style="font-family:var(--mono);font-size:9px;color:var(--muted)">'+decs.length+' decisions</div></div><div style="margin-left:auto;font-family:var(--mono);font-size:11px;font-weight:700;color:'+(AGD[ag.id].findings>0?ag.color:'var(--dim)')+'">'+AGD[ag.id].findings+' found</div></div></div><div class="kb-body" style="border:1px solid rgba('+cr+','+cg+','+cb+',0.18);border-top:none;border-radius:0 0 8px 8px;padding:8px;background:rgba(4,8,15,0.6);max-height:calc(100vh - 220px);overflow-y:auto;scrollbar-color:'+ag.color+' rgba(0,0,0,0.2);scrollbar-width:thin">'+cards+'</div></div>';}).join('')+'</div>';
+  document.getElementById('modal-reasoning').classList.add('open');
+}
+function closeModal(){document.getElementById('modal-reasoning').classList.remove('open');}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal();});
+
+// ── MISSION ──
+async function startMission(){
+  var k=window._runtimeKey||API_KEY;if(!k||k==='PASTE_YOUR_KEY_HERE'){alert('Enter your API key in the intro screen.');return;}
+  document.getElementById('bstart').disabled=true;
+  addLog('Mission started — 8 agents analysing Brisbane city data…','lb');showEvent('🌆','Mission started','8 agents · 20 suburbs · 4 layers','#00b4d8');
+  AGENTS.forEach(function(ag,i){setTimeout(function(){runAgent(ag.id);},i*1200);});
+}
+function resetMission(){
+  missionPaused=false;SUBURBS.forEach(function(s){suburbScores[s.id]=null;});AGENTS.forEach(function(ag){initAGD(ag);});
+  buildAgentCards();clearLog();document.getElementById('log').innerHTML='<div class="ll lm">Deploy agents to begin.</div>';
+  document.getElementById('findings-strip').querySelectorAll('.finding-card').forEach(function(e){e.remove();});
+  if(!document.getElementById('findings-empty')){var e=document.createElement('div');e.className='finding-empty';e.id='findings-empty';e.textContent='Agent findings surface here…';document.getElementById('findings-strip').appendChild(e);}
+  var vov=document.getElementById('vov');if(vov){vov.style.opacity='0';vov.style.pointerEvents='none';}
+  var rb=document.getElementById('rev-badge');if(rb)rb.style.display='none';
+  var ti=document.getElementById('ticker-inner');if(ti){ti.getAnimations().forEach(function(a){a.cancel();});ti.innerHTML='Agents reset — ready to deploy';}
+  document.getElementById('ticker-hist').innerHTML='';
+  var bs=document.getElementById('bstart');if(bs)bs.disabled=false;
+  var pb=document.getElementById('pause-btn');if(pb){pb.textContent='⏸ Pause';pb.style.color='#5b8faa';}
+  _tq=[];_tRunning=false;updateDeckLayers();renderScatter();updateKPIs();resetView();
+}
+async function testAPI(){var k=window._runtimeKey||API_KEY;if(!k||k==='PASTE_YOUR_KEY_HERE'){alert('Enter API key first.');return;}addLog('Testing API…','lm');try{var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:50,messages:[{role:'user',content:'Say OK'}]})});var d=await r.json();addLog(r.ok?'✓ API connected: '+d.content[0].text:'✗ '+d.error.message,'lb');}catch(e){addLog('✗ '+e.message,'le');}}
+
+// ── KEY HANDLING ──
+function onKeyInput(v){var btn=document.getElementById('launch-btn'),st=document.getElementById('key-st'),inp=document.getElementById('intro-key');if(v.startsWith('sk-ant')){st.innerHTML='<span style="color:#4ade80">✓ Valid</span>';btn.style.opacity='1';btn.style.pointerEvents='all';inp.style.borderColor='rgba(0,180,216,0.5)';}else if(v.length){st.innerHTML='<span style="color:#ef4444">✗ Invalid</span>';btn.style.opacity='.5';}else{st.textContent='Enter →';btn.style.opacity='.5';}}
+function launchAgents(){var v=document.getElementById('intro-key').value.trim(),k=v||API_KEY;if(!k||k==='PASTE_YOUR_KEY_HERE'||!k.startsWith('sk-ant')){document.getElementById('intro-key').style.borderColor='rgba(239,68,68,0.6)';return;}window._runtimeKey=k;var el=document.getElementById('intro-overlay');el.style.transition='opacity .4s';el.style.opacity='0';setTimeout(function(){el.style.display='none';},420);}
+
+// ── INTRO ──
+function buildIntroAgents(){var wrap=document.getElementById('intro-agents');if(!wrap)return;wrap.innerHTML=AGENTS.map(function(ag){var rgb=hexRgb(ag.color);return'<div style="background:rgba('+rgb.join(',')+',0.06);border:1px solid rgba('+rgb.join(',')+',0.2);border-radius:7px;padding:7px 8px;text-align:center"><div style="font-size:16px;margin-bottom:3px">'+ag.emoji+'</div><div style="font-family:var(--mono);font-size:9px;font-weight:700;color:'+ag.color+'">'+ag.name+'</div><div style="font-family:var(--mono);font-size:7px;color:var(--muted);margin-top:1px">'+ag.role+'</div></div>';}).join('');}
+
+// ── INIT ──
+AGENTS.forEach(function(ag){initAGD(ag);});
+buildAgentCards();
+buildIntroAgents();
+setTimeout(function(){
+  initMap();
+  initScatter();
+},400);
+window.addEventListener('resize',function(){
+  if(scatterChart)scatterChart.resize();
+  if(leafMap)leafMap.resize();
+});
+if(API_KEY!=='PASTE_YOUR_KEY_HERE'){var inp=document.getElementById('intro-key');if(inp){inp.value=API_KEY;onKeyInput(API_KEY);window._runtimeKey=API_KEY;}}
+</script>
+</body>
+</html>
